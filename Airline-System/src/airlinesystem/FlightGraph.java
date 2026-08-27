@@ -1,21 +1,3 @@
-/*
- * FlightGraph.java
- * Core data structure: Directed Weighted Graph using Adjacency List.
- *
- * Graph Representation:
- *   Vertices : Airport objects  → LinkedHashMap<String, Airport>
- *   Edges    : Flight objects   → LinkedHashMap<String, LinkedList<Flight>>
- *
- * Complexity:
- *   Space          O(V + E)
- *   Add Airport    O(1)
- *   Add Flight     O(1)
- *   Remove Airport O(V + E)
- *   Remove Flight  O(E)
- *   Display        O(V + E)
- *
- * DSA Assignment - Malaysia Airline Flight Network Graph
- */
 package airlinesystem;
 
 import java.util.*;

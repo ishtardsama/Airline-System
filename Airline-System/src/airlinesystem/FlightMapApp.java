@@ -514,16 +514,46 @@ public class FlightMapApp extends Application {
         ComboBox<String> cb = new ComboBox<>();
         cb.setPromptText(prompt);
         cb.setMaxWidth(Double.MAX_VALUE);
-        cb.setStyle("-fx-background-color:#1e3d5a; -fx-text-fill:#ddeeff; -fx-prompt-text-fill:#5a8ab0;");
+        cb.setStyle("-fx-background-color: #1e3d5a; -fx-border-color: #3b6288; -fx-border-radius: 4; -fx-background-radius: 4; -fx-mark-color: #5ab3f0;");
+        cb.setButtonCell(new ListCell<String>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(prompt);
+                    setTextFill(Color.web("#8bb4d4"));
+                    setFont(Font.font("Arial", FontWeight.NORMAL, 12));
+                } else {
+                    setText(item);
+                    setTextFill(Color.web("#FFFFFF"));
+                    setFont(Font.font("Arial", FontWeight.BOLD, 12));
+                }
+                setStyle("-fx-background-color: transparent;");
+            }
+        });
+        cb.setCellFactory(lv -> new ListCell<String>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(item);
+                    setTextFill(Color.web("#FFFFFF"));
+                    setFont(Font.font("Arial", 12));
+                }
+                setStyle("-fx-background-color: #16293f; -fx-padding: 5 8;");
+            }
+        });
         return cb;
     }
 
     private TextField field(String prompt) {
         TextField tf = new TextField();
         tf.setPromptText(prompt);
-        tf.setStyle("-fx-background-color:#0f2030; -fx-text-fill:#ddeeff;"
-                + " -fx-prompt-text-fill:#4a7a9b; -fx-border-color:#2a4060;"
-                + " -fx-border-radius:4; -fx-background-radius:4;");
+        tf.setStyle("-fx-background-color: #16293f; -fx-text-fill: #FFFFFF;"
+                + " -fx-prompt-text-fill: #8bb4d4; -fx-border-color: #3b6288;"
+                + " -fx-border-radius: 4; -fx-background-radius: 4; -fx-font-size: 11.5px;");
         return tf;
     }
 

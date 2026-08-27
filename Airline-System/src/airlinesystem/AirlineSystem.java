@@ -1,23 +1,3 @@
-/*
- * AirlineSystem.java
- * Main entry point for the Malaysia Airline Flight Network System.
- *
- * System Overview:
- *   - Graph Type   : Directed Weighted Graph
- *   - Representation: Adjacency List
- *   - Airports     : 18 Malaysian airports (Peninsular, Sabah, Sarawak)
- *   - Flight Routes: 55 domestic flight routes
- *
- * Features:
- *   - Add / Remove Airports and Flights
- *   - Display Adjacency List
- *   - Check direct flights and view neighbors
- *   - BFS and DFS traversals
- *   - Dijkstra shortest distance and cheapest price path
- *   - Graph statistics
- *
- * DSA Assignment - Malaysia Airline Flight Network Graph
- */
 package airlinesystem;
 
 import java.util.*;
