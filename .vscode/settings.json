@@ -1,0 +1,10 @@
+{
+    "java.debug.settings.onBuildFailureProceed": true,
+    "java.project.referencedLibraries": [
+        "Airline-System/lib/**/*.jar"
+    ],
+    "java.project.sourcePaths": [
+        "Airline-System/src"
+    ],
+    "java.project.outputPath": "Airline-System/out"
+}

@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Run FlightMapApp (GUI)",
+            "request": "launch",
+            "mainClass": "airlinesystem.FlightMapApp",
+            "projectName": "Airline-System",
+            "vmArgs": "--module-path \"${workspaceFolder}/Airline-System/lib\" --add-modules javafx.controls,javafx.fxml"
+        },
+        {
+            "type": "java",
+            "name": "Run AirlineSystem (Console)",
+            "request": "launch",
+            "mainClass": "airlinesystem.AirlineSystem",
+            "projectName": "Airline-System"
+        }
+    ]
+}
