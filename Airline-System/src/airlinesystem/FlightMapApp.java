@@ -57,6 +57,7 @@ public class FlightMapApp extends Application {
     private TextField        tfNewCode, tfNewName, tfNewCity;
     private ComboBox<String> cboNewRegion;
     private Label            lblPlaceHint;
+    private Slider           speedSlider;
 
     @Override
     public void start(Stage stage) {
@@ -256,9 +257,9 @@ public class FlightMapApp extends Application {
 
     private void runBFS() {
         String start = cboFrom.getValue();
-        if (start == null) { log("[!] Select a start airport (From)."); return; }
+        if (start == null) { showError("No Airport Selected", "Please select a starting airport from the \"From\" dropdown before running the scan."); return; }
         clearHighlights();
-        log("── BFS from [" + start + "] ──");
+        log("── Airport Connectivity Scan from [" + start + "] ──");
 
         List<String>  order = new ArrayList<>();
         Set<String>   seen  = new LinkedHashSet<>();
@@ -273,14 +274,14 @@ public class FlightMapApp extends Application {
                 if (!seen.contains(nb)) { seen.add(nb); queue.offer(nb); }
             }
         }
-        animateTraversal(order, "BFS");
+        animateTraversal(order, "Connectivity Scan");
     }
 
     private void runDFS() {
         String start = cboFrom.getValue();
-        if (start == null) { log("[!] Select a start airport (From)."); return; }
+        if (start == null) { showError("No Airport Selected", "Please select a starting airport from the \"From\" dropdown before running the route discovery."); return; }
         clearHighlights();
-        log("── DFS from [" + start + "] ──");
+        log("── Deep Route Discovery from [" + start + "] ──");
 
         List<String>  order = new ArrayList<>();
         Set<String>   seen  = new LinkedHashSet<>();
@@ -297,7 +298,7 @@ public class FlightMapApp extends Application {
                 if (!seen.contains(n)) stack.push(n);
             }
         }
-        animateTraversal(order, "DFS");
+        animateTraversal(order, "Route Discovery");
     }
 
     private void animateTraversal(List<String> order, String label) {
@@ -308,7 +309,8 @@ public class FlightMapApp extends Application {
         pathNodeSet.clear();
 
         final int[] step = {0};
-        animTimeline = new Timeline(new KeyFrame(Duration.millis(480), e -> {
+        double ms = speedSlider != null ? speedSlider.getValue() : 900;
+        animTimeline = new Timeline(new KeyFrame(Duration.millis(ms), e -> {
             if (step[0] < order.size()) {
                 if (currentNode != null) visitedNodes.add(currentNode);
                 currentNode = order.get(step[0]);
@@ -330,8 +332,8 @@ public class FlightMapApp extends Application {
     private void runDijkstra(String mode) {
         String src  = cboFrom.getValue();
         String dest = cboDest.getValue();
-        if (src == null || dest == null) { log("[!] Select From and To airports."); return; }
-        if (src.equals(dest))            { log("[!] From and To are the same."); return; }
+        if (src == null || dest == null) { showError("Airports Not Selected", "Please select both a \"From\" and a \"To\" airport before calculating the route."); return; }
+        if (src.equals(dest))            { showError("Same Airport Selected", "The \"From\" and \"To\" airports are the same.\nPlease choose two different airports."); return; }
         clearHighlights();
 
         Map<String, Double> cost    = new HashMap<>();
@@ -403,8 +405,8 @@ public class FlightMapApp extends Application {
             if (nv != null) { selectedCode = nv; updateInfoPanel(nv); redraw(); }
         });
 
-        Button btnBFS   = btn("▶  BFS Traversal",           "#1565C0");
-        Button btnDFS   = btn("▶  DFS Traversal",           "#1B5E20");
+        Button btnBFS   = btn("▶  Airport Connectivity Scan", "#1565C0");
+        Button btnDFS   = btn("▶  Deep Route Discovery",      "#1B5E20");
         Button btnDist  = btn("▶  Shortest Distance (km)",  "#BF360C");
         Button btnPrice = btn("▶  Cheapest Price (RM)",     "#4A148C");
         Button btnClear = btn("✕  Clear Highlights",        "#37474F");
@@ -413,6 +415,15 @@ public class FlightMapApp extends Application {
         btnDist.setOnAction(e  -> runDijkstra("dist"));
         btnPrice.setOnAction(e -> runDijkstra("price"));
         btnClear.setOnAction(e -> { clearHighlights(); log("Cleared."); redraw(); });
+
+        // Animation speed slider (Slow 200ms <-> Fast 2000ms, default 900ms)
+        Label speedLabel = lbl("Traversal Speed", 9, FontWeight.BOLD, "#5a8ab0");
+        speedSlider = new Slider(200, 2000, 900);
+        speedSlider.setShowTickMarks(true);
+        speedSlider.setShowTickLabels(false);
+        speedSlider.setMajorTickUnit(400);
+        speedSlider.setStyle("-fx-control-inner-background: #1e3248;");
+        Label speedHint = lbl("◀ Fast                 Slow ▶", 9, FontWeight.NORMAL, "#7a9bb5");
 
         tfNewCode    = field("IATA Code  (e.g. KLG)");
         tfNewName    = field("Airport Name");
@@ -447,33 +458,56 @@ public class FlightMapApp extends Application {
                 btnAddAirport, lblPlaceHint
         );
 
+        // ── Compact legend grid at the top ─────────────────────────────
+        GridPane legendGrid = new GridPane();
+        legendGrid.setHgap(8);
+        legendGrid.setVgap(5);
+        legendGrid.setPadding(new Insets(8));
+        legendGrid.setStyle("-fx-background-color: #1a2e44; -fx-background-radius: 6;");
+        Object[][] legendItems = {
+            { P_COL,    "Peninsular" }, { S_COL,    "Sabah"        },
+            { W_COL,    "Sarawak"    }, { NEW_COL,  "New Airport"  },
+            { VIS_COL,  "Scanned"    }, { CUR_COL,  "Visiting"     },
+            { PATH_COL, "Shortest"   }, { SEL_COL,  "Selected"     }
+        };
+        for (int i = 0; i < legendItems.length; i++) {
+            Color  c   = (Color)  legendItems[i][0];
+            String txt = (String) legendItems[i][1];
+            javafx.scene.shape.Rectangle sq = new javafx.scene.shape.Rectangle(11, 11, c);
+            sq.setArcWidth(3); sq.setArcHeight(3);
+            Label  ll = lbl(txt, 9.5, FontWeight.NORMAL, "#a8cce6");
+            HBox   hr = new HBox(5, sq, ll);
+            hr.setAlignment(Pos.CENTER_LEFT);
+            legendGrid.add(hr, i % 2, i / 2);
+        }
+        ColumnConstraints col1 = new ColumnConstraints(); col1.setPercentWidth(50);
+        ColumnConstraints col2 = new ColumnConstraints(); col2.setPercentWidth(50);
+        legendGrid.getColumnConstraints().addAll(col1, col2);
+
+        // ── Formal airline-style event log ───────────────────────────────
         logArea = new TextArea();
         logArea.setEditable(false);
         logArea.setWrapText(true);
-        logArea.setPrefHeight(110);
-        logArea.setStyle("-fx-control-inner-background: #0f1e2e; -fx-text-fill: #7ecfb0;"
-                + " -fx-font-size: 10.5; -fx-font-family: monospace; -fx-border-color: #2a4060;");
-        log("System ready. " + graph.totalAirports() + " airports loaded.");
-
-        VBox legend = new VBox(5,
-                legendRow(P_COL,    "Peninsular Malaysia"),
-                legendRow(S_COL,    "Sabah"),
-                legendRow(W_COL,    "Sarawak"),
-                legendRow(NEW_COL,  "Newly Added Airport"),
-                legendRow(VIS_COL,  "BFS / DFS Visited"),
-                legendRow(CUR_COL,  "Currently Visiting"),
-                legendRow(PATH_COL, "Shortest Path"),
-                legendRow(SEL_COL,  "Selected Airport")
+        logArea.setPrefHeight(180);
+        logArea.setStyle(
+            "-fx-control-inner-background: #0a1828;" +
+            "-fx-text-fill: #00e5ff;" +
+            "-fx-font-size: 12;" +
+            "-fx-font-family: 'Courier New', monospace;" +
+            "-fx-border-color: #1e5080; -fx-border-width: 1.5;" +
+            "-fx-background-radius: 4; -fx-border-radius: 4;"
         );
+        log("SYSTEM READY  |  " + graph.totalAirports() + " airports loaded");
 
         panel.getChildren().addAll(
-                title, sub, sep(),
+                title, sub,
+                secLabel("MAP LEGEND"), legendGrid, sep(),
                 secLabel("AIRPORT INFO"),    infoCard, sep(),
                 secLabel("SELECT AIRPORTS"), cboFrom, cboDest, sep(),
-                secLabel("ALGORITHMS"),      btnBFS, btnDFS, btnDist, btnPrice, btnClear, sep(),
+                secLabel("ALGORITHMS"),      btnBFS, btnDFS, btnDist, btnPrice, btnClear,
+                speedLabel, speedSlider, speedHint, sep(),
                 secLabel("ADD NEW AIRPORT"), addCard, sep(),
-                secLabel("LOG"),             logArea, sep(),
-                secLabel("LEGEND"),          legend
+                secLabel("OPERATION LOG"),   logArea
         );
         return panel;
     }
@@ -571,7 +605,11 @@ public class FlightMapApp extends Application {
         return row;
     }
 
-    private void log(String msg) { logArea.appendText(msg + "\n"); }
+    private void log(String msg) {
+        java.time.LocalTime now = java.time.LocalTime.now();
+        String ts = String.format("%02d:%02d:%02d", now.getHour(), now.getMinute(), now.getSecond());
+        logArea.appendText("[" + ts + "]  " + msg + "\n");
+    }
 
     private void clearHighlights() {
         if (animTimeline != null) animTimeline.stop();
@@ -660,6 +698,34 @@ public class FlightMapApp extends Application {
         Airport sa = graph.getAirport(s), da = graph.getAirport(d);
         if (sa != null && da != null)
             graph.addFlight(new Flight(code, sa, da, km, min, rm));
+    }
+
+    /** Shows a styled error alert dialog to the user. */
+    private void showError(String title, String message) {
+        log("[!] " + message);
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle(title);
+        alert.setHeaderText(null);   // suppress default header so our custom one shows
+
+        // Custom bright header label — guaranteed to render without CSS lookup
+        Label headerLbl = new Label("\u26a0  " + title);
+        headerLbl.setFont(Font.font("Arial", FontWeight.BOLD, 15));
+        headerLbl.setTextFill(Color.web("#FFD600"));
+        headerLbl.setWrapText(true);
+        headerLbl.setPadding(new Insets(10, 14, 10, 14));
+        headerLbl.setMaxWidth(Double.MAX_VALUE);
+        headerLbl.setStyle("-fx-background-color: #1a2e44;");
+
+        alert.getDialogPane().setHeader(headerLbl);
+        alert.getDialogPane().setStyle(
+            "-fx-background-color: #1e3248;" +
+            "-fx-border-color: #FF5252; -fx-border-width: 2;"
+        );
+        alert.getDialogPane().setContentText(message);
+        alert.getDialogPane().lookup(".content.label").setStyle(
+            "-fx-text-fill: #e0f0ff; -fx-font-size: 13;"
+        );
+        alert.showAndWait();
     }
 
     public static void main(String[] args) { launch(args); }

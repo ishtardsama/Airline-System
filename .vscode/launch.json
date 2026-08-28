@@ -3,11 +3,18 @@
     "configurations": [
         {
             "type": "java",
+            "name": "FlightMapApp",
+            "request": "launch",
+            "mainClass": "airlinesystem.FlightMapApp",
+            "projectName": "AirLineSystem_6242f6e7"
+        },
+        {
+            "type": "java",
             "name": "Run FlightMapApp (GUI)",
             "request": "launch",
             "mainClass": "airlinesystem.FlightMapApp",
             "projectName": "Airline-System",
-            "vmArgs": "--module-path \"${workspaceFolder}/Airline-System/lib\" --add-modules javafx.controls,javafx.fxml"
+            "vmArgs": "--module-path \"${workspaceFolder}/Airline-System/lib\" --add-modules javafx.controls,javafx.fxml,javafx.graphics --enable-native-access=javafx.graphics"
         },
         {
             "type": "java",
