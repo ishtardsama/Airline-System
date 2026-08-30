@@ -582,11 +582,11 @@ public class AirlineSystem {
         traversal.dijkstraByCheapestPrice(src, dest);
     }
 
-    // ============================================================
-    // SAMPLE DATA LOADER
-    // 18 Malaysian airports: 8 Peninsular, 5 Sabah, 5 Sarawak
-    // 55 domestic flight routes
-    // ============================================================
+
+    //  SAMPLE DATA LOADER
+    //  18 Malaysian airports: 8 Peninsular, 5 Sabah, 5 Sarawak
+    //  55 domestic flight routes
+
     private static void loadSampleData() {
 
         // --------------------------------------------------------
