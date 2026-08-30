@@ -35,6 +35,7 @@ public class FlightMapApp extends Application {
     private static final Color ACC_BLUE = Color.web("#5ab3f0");
 
     private FlightGraph graph;
+    private GraphTraversal traversal;
     private Canvas canvas;
     private GraphicsContext gc;
 
@@ -71,6 +72,7 @@ public class FlightMapApp extends Application {
     public void start(Stage stage) {
         graph = new FlightGraph();
         loadSampleData();
+        traversal = new GraphTraversal(graph);
         definePositions();
 
         canvas = new Canvas(CW, CH);
@@ -225,10 +227,17 @@ public class FlightMapApp extends Application {
         if (placingMode && pendingAirport != null) {
             String code = pendingAirport.getCode();
             pos.put(code, new double[]{mx, my});
-            graph.addAirport(pendingAirport);
+            if (!graph.addAirport(pendingAirport)) {
+                placingMode = false;
+                pendingAirport = null;
+                canvas.setCursor(Cursor.DEFAULT);
+                lblPlaceHint.setText("");
+                showError("Airport Not Added", "The airport could not be added. Please check the entered details.");
+                redraw();
+                return;
+            }
             newAirports.add(code);
-            cboFrom.getItems().add(code);
-            cboDest.getItems().add(code);
+            syncAllCombos();
             placingMode = false;
             canvas.setCursor(Cursor.DEFAULT);
             lblPlaceHint.setText("");
@@ -271,18 +280,10 @@ public class FlightMapApp extends Application {
         clearHighlights();
         log("── Airport Connectivity Scan from [" + start + "] ──");
 
-        List<String>  order = new ArrayList<>();
-        Set<String>   seen  = new LinkedHashSet<>();
-        Queue<String> queue = new LinkedList<>();
-        queue.offer(start);
-        seen.add(start);
-        while (!queue.isEmpty()) {
-            String cur = queue.poll();
-            order.add(cur);
-            for (Flight f : graph.getNeighbors(cur)) {
-                String nb = f.getDestination().getCode();
-                if (!seen.contains(nb)) { seen.add(nb); queue.offer(nb); }
-            }
+        List<String> order = traversal.bfsOrder(start);
+        if (order.isEmpty()) {
+            showError("Traversal Failed", "The selected starting airport could not be traversed.");
+            return;
         }
         animateTraversal(order, "Connectivity Scan");
     }
@@ -293,20 +294,10 @@ public class FlightMapApp extends Application {
         clearHighlights();
         log("── Deep Route Discovery from [" + start + "] ──");
 
-        List<String>  order = new ArrayList<>();
-        Set<String>   seen  = new LinkedHashSet<>();
-        Stack<String> stack = new Stack<>();
-        stack.push(start);
-        while (!stack.isEmpty()) {
-            String cur = stack.pop();
-            if (seen.contains(cur)) continue;
-            seen.add(cur);
-            order.add(cur);
-            List<Flight> nb = graph.getNeighbors(cur);
-            for (int i = nb.size() - 1; i >= 0; i--) {
-                String n = nb.get(i).getDestination().getCode();
-                if (!seen.contains(n)) stack.push(n);
-            }
+        List<String> order = traversal.dfsOrder(start);
+        if (order.isEmpty()) {
+            showError("Traversal Failed", "The selected starting airport could not be traversed.");
+            return;
         }
         animateTraversal(order, "Route Discovery");
     }
@@ -351,65 +342,102 @@ public class FlightMapApp extends Application {
     private void runDijkstra(String mode) {
         String src  = cboFrom.getValue();
         String dest = cboDest.getValue();
-        if (src == null || dest == null) { showError("Airports Not Selected", "Please select both a \"From\" and a \"To\" airport before calculating the route."); return; }
-        if (src.equals(dest))            { showError("Same Airport Selected", "The \"From\" and \"To\" airports are the same.\nPlease choose two different airports."); return; }
+        if (src == null || dest == null) {
+            showError("Airports Not Selected",
+                    "Please select both a \"From\" and a \"To\" airport before calculating the route.");
+            return;
+        }
+        if (src.equals(dest)) {
+            showError("Same Airport Selected",
+                    "The \"From\" and \"To\" airports are the same.\nPlease choose two different airports.");
+            return;
+        }
+
         clearHighlights();
 
-        Map<String, Double> cost    = new HashMap<>();
-        Map<String, String> prev    = new HashMap<>();
-        Set<String>         settled = new HashSet<>();
-        for (String c : graph.getAirports().keySet()) cost.put(c, Double.MAX_VALUE);
-        cost.put(src, 0.0);
+        GraphTraversal.PathResult result;
+        String label;
+        String total;
 
-        PriorityQueue<String> pq = new PriorityQueue<>(
-                Comparator.comparingDouble(c -> cost.getOrDefault(c, Double.MAX_VALUE)));
-        pq.offer(src);
-
-        while (!pq.isEmpty()) {
-            String cur = pq.poll();
-            if (settled.contains(cur)) continue;
-            settled.add(cur);
-            if (cur.equals(dest)) break;
-            for (Flight f : graph.getNeighbors(cur)) {
-                String nb = f.getDestination().getCode();
-                if (settled.contains(nb)) continue;
-                double w  = mode.equals("dist") ? f.getDistance() : f.getPrice();
-                double nc = cost.get(cur) + w;
-                if (nc < cost.get(nb)) { cost.put(nb, nc); prev.put(nb, cur); pq.offer(nb); }
-            }
+        switch (mode) {
+            case "duration":
+                result = traversal.fastestDuration(src, dest);
+                label = "Fastest Duration";
+                break;
+            case "price":
+                result = traversal.cheapestPrice(src, dest);
+                label = "Cheapest Price";
+                break;
+            case "dist":
+            default:
+                result = traversal.shortestDistance(src, dest);
+                label = "Shortest Distance";
+                break;
         }
 
-        if (cost.get(dest) == Double.MAX_VALUE) {
-            log("[!] No path from [" + src + "] to [" + dest + "]."); return;
+        if (!result.isFound()) {
+            log("[!] No path from [" + src + "] to [" + dest + "].");
+            showError("No Route Found",
+                    "No available route could be found from " + src + " to " + dest + ".");
+            return;
         }
 
-        LinkedList<String> path = new LinkedList<>();
-        for (String c = dest; c != null; c = prev.get(c)) path.addFirst(c);
-        for (String n : path) pathNodeSet.add(n);
-        for (int i = 0; i < path.size() - 1; i++)
+        List<String> path = result.getPath();
+        pathNodeSet.addAll(path);
+        for (int i = 0; i < path.size() - 1; i++) {
             pathEdgeSet.add(path.get(i) + "_" + path.get(i + 1));
+        }
 
-        String unit  = mode.equals("dist") ? "km" : "RM";
-        String label = mode.equals("dist") ? "Shortest Distance" : "Cheapest Price";
+        if (mode.equals("duration")) {
+            total = String.format("%.0f min", result.getTotalDuration());
+        } else if (mode.equals("price")) {
+            total = String.format("RM %.0f", result.getTotalPrice());
+        } else {
+            total = String.format("%.0f km", result.getTotalDistance());
+        }
+
         log("── " + label + " ──");
         log("Path : " + String.join(" -> ", path));
-        log("Total: " + (mode.equals("dist")
-                ? String.format("%.0f km", cost.get(dest))
-                : String.format("RM %.0f",  cost.get(dest))));
+        log("Total: " + total);
+        log(String.format("Trip : %.0f km | %.0f min | RM %.2f",
+                result.getTotalDistance(), result.getTotalDuration(), result.getTotalPrice()));
 
-        // Show result card
-        Airport srcA  = graph.getAirport(src);
-        Airport dstA  = graph.getAirport(dest);
-        String  route = String.join(" → ", path);
-        String  total = mode.equals("dist")
-                ? String.format("%.0f km", cost.get(dest))
-                : String.format("RM %.0f",  cost.get(dest));
-        showResult(
-            label,
-            (srcA != null ? srcA.getCity() : src) + "  ➜  " + (dstA != null ? dstA.getCity() : dest),
-            route,
-            "Total: " + total
-        );
+        Airport srcA = graph.getAirport(src);
+        Airport dstA = graph.getAirport(dest);
+        String route = String.join(" → ", path);
+
+        String summary;
+
+if (mode.equals("duration")) {
+    summary = String.format(
+            "Fastest: %.0f min    •    Distance: %.0f km    •    Price: RM %.2f",
+            result.getTotalDuration(),
+            result.getTotalDistance(),
+            result.getTotalPrice()
+    );
+} else if (mode.equals("price")) {
+    summary = String.format(
+            "Cheapest: RM %.2f    •    Distance: %.0f km    •    Duration: %.0f min",
+            result.getTotalPrice(),
+            result.getTotalDistance(),
+            result.getTotalDuration()
+    );
+} else {
+    summary = String.format(
+            "Shortest: %.0f km    •    Duration: %.0f min    •    Price: RM %.2f",
+            result.getTotalDistance(),
+            result.getTotalDuration(),
+            result.getTotalPrice()
+    );
+}
+
+showResult(
+    label,
+    (srcA != null ? srcA.getCity() : src) + "  ➜  " +
+            (dstA != null ? dstA.getCity() : dest),
+    route,
+    summary
+);
         redraw();
     }
 
@@ -435,9 +463,9 @@ public class FlightMapApp extends Application {
         cboFrom = combo("From / Start Airport");
         cboDest = combo("To / Destination Airport");
         for (String code : graph.getAirports().keySet()) {
-            cboFrom.getItems().add(code);
-            cboDest.getItems().add(code);
-        }
+    cboFrom.getItems().add(code);
+    cboDest.getItems().add(code);
+}
         cboFrom.valueProperty().addListener((obs, old, nv) -> {
             if (nv != null) { selectedCode = nv; updateInfoPanel(nv); redraw(); }
         });
@@ -446,11 +474,13 @@ public class FlightMapApp extends Application {
         Button btnBFS   = btn("▶  Airport Connectivity Scan", "#1565C0");
         Button btnDFS   = btn("▶  Deep Route Discovery",      "#1B5E20");
         Button btnDist  = btn("▶  Shortest Distance (km)",  "#BF360C");
-        Button btnPrice = btn("▶  Cheapest Price (RM)",     "#4A148C");
+        Button btnTime  = btn("▶  Fastest Duration (min)",   "#006064");
+        Button btnPrice = btn("▶  Cheapest Price (RM)",      "#4A148C");
         Button btnClear = btn("✕  Clear Highlights",        "#37474F");
         btnBFS.setOnAction(e   -> runBFS());
         btnDFS.setOnAction(e   -> runDFS());
         btnDist.setOnAction(e  -> runDijkstra("dist"));
+        btnTime.setOnAction(e  -> runDijkstra("duration"));
         btnPrice.setOnAction(e -> runDijkstra("price"));
         btnClear.setOnAction(e -> { clearHighlights(); log("Cleared."); redraw(); });
 
@@ -472,25 +502,52 @@ public class FlightMapApp extends Application {
         Button btnAddAirport = btn("📍  Place New Airport on Map", "#00695C");
         btnAddAirport.setOnAction(e -> {
             String code = tfNewCode.getText().trim().toUpperCase();
-            if (code.isEmpty())            { log("[!] Enter IATA code first."); return; }
-            if (code.length() > 4)         { log("[!] IATA code max 4 characters."); return; }
-            if (graph.airportExists(code)) { log("[!] Airport [" + code + "] already exists."); return; }
+            if (!code.matches("[A-Z]{3}")) {
+                showError("Invalid IATA Code", "Airport code must contain exactly 3 letters, for example KUL or BKI.");
+                return;
+            }
+            if (graph.airportExists(code)) {
+                showError("Duplicate Airport", "Airport [" + code + "] already exists in the network.");
+                return;
+            }
             String name   = tfNewName.getText().trim();
             String city   = tfNewCity.getText().trim();
-            String region = cboNewRegion.getValue() != null ? cboNewRegion.getValue() : "Peninsular Malaysia";
-            if (city.isEmpty()) city = code + " City";
-            pendingAirport = new Airport(code, name.isEmpty() ? code + " Airport" : name, city, region);
+            String region = cboNewRegion.getValue();
+            if (name.isEmpty() || city.isEmpty() || region == null) {
+                showError("Incomplete Airport Details", "Please enter the airport name, city/state, and region before placing it on the map.");
+                return;
+            }
+            pendingAirport = new Airport(code, name, city, region);
             placingMode    = true;
             canvas.setCursor(Cursor.CROSSHAIR);
             lblPlaceHint.setText("👆 Click on the map to place [" + code + "]");
             log("Click map to place [" + code + "]...");
             redraw();
         });
+        
+        Button btnCancelPlacement = btn("✕  Cancel Placement", "#455A64");
+
+btnCancelPlacement.setOnAction(e -> {
+    if (placingMode) {
+        placingMode = false;
+        pendingAirport = null;
+        canvas.setCursor(Cursor.DEFAULT);
+        lblPlaceHint.setText("");
+        log("Airport placement cancelled.");
+        redraw();
+    }
+});
+        
         VBox addCard = card(
-                lbl("IATA Code & Details", 9, FontWeight.BOLD, "#5a8ab0"),
-                tfNewCode, tfNewName, tfNewCity, cboNewRegion,
-                btnAddAirport, lblPlaceHint
-        );
+        lbl("IATA Code & Details", 9, FontWeight.BOLD, "#5a8ab0"),
+        tfNewCode,
+        tfNewName,
+        tfNewCity,
+        cboNewRegion,
+        btnAddAirport,
+        btnCancelPlacement,
+        lblPlaceHint
+);
 
         // ── Compact legend grid ──────────────────────────────────────────
         GridPane legendGrid = new GridPane();
@@ -591,7 +648,7 @@ public class FlightMapApp extends Application {
                 accordionSection("MAP LEGEND",      true,  legendGrid),
                 accordionSection("AIRPORT INFO",    true,  infoCard),
                 accordionSection("SELECT AIRPORTS", true,  cboFrom, cboDest),
-                accordionSection("ALGORITHMS",      true,  btnBFS, btnDFS, btnDist, btnPrice, btnClear,
+                accordionSection("ALGORITHMS",      true,  btnBFS, btnDFS, btnDist, btnTime, btnPrice, btnClear,
                                                            speedLabel, speedSlider, speedHint),
                 accordionSection("ADD NEW AIRPORT", false, addCard),
                 accordionSection("REMOVE AIRPORT",  false, removeAirportCard),
@@ -791,6 +848,8 @@ public class FlightMapApp extends Application {
                 + " -fx-background-radius: 6;");
 
         Label summaryLabel = lbl(summary, 12, FontWeight.BOLD, "#00e5ff");
+        summaryLabel.setWrapText(true);
+summaryLabel.setMaxWidth(440);
 
         // ── OK button ────────────────────────────────────────────────────
         Button okBtn = new Button("  OK  ");
@@ -815,7 +874,8 @@ public class FlightMapApp extends Application {
         VBox body = new VBox(10, statLabel, pathLabel, div, summaryLabel, btnRow);
         body.setPadding(new Insets(12, 14, 14, 14));
         body.setStyle("-fx-background-color: #1e3248;");
-        body.setMaxWidth(400);
+        body.setPrefWidth(470);
+body.setMaxWidth(470);
 
         // ── Outer border ─────────────────────────────────────────────────
         VBox root = new VBox(headerRow, body);
@@ -1024,6 +1084,14 @@ public class FlightMapApp extends Application {
             showError("Airport Not Found", "One or both airports were not found in the graph.");
             return;
         }
+        
+        if (graph.searchFlightByCode(fCode) != null) {
+    showError(
+        "Duplicate Flight Code",
+        "Flight code [" + fCode + "] is already used by another route."
+    );
+    return;
+}
 
         // Check for duplicate edge
         if (graph.getDirectFlight(from, to) != null) {
