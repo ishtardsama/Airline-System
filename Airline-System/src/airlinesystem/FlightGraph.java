@@ -19,30 +19,52 @@ public class FlightGraph {
     //  VERTEX OPERATIONS
     // ============================================================
 
-    /** Add airport (vertex). O(1) */
+    /** Add airport (vertex). Average O(1). */
     public boolean addAirport(Airport airport) {
-        String code = airport.getCode().toUpperCase();
+        if (airport == null) {
+            System.out.println("  [!] Airport data cannot be null.");
+            return false;
+        }
+
+        String code = normalizeCode(airport.getCode());
+        if (!isValidAirportCode(code)) {
+            System.out.println("  [!] Airport code must contain exactly 3 letters (e.g. KUL).");
+            return false;
+        }
+        if (isBlank(airport.getName()) || isBlank(airport.getCity()) || isBlank(airport.getRegion())) {
+            System.out.println("  [!] Airport name, city and region are required.");
+            return false;
+        }
         if (airports.containsKey(code)) {
             System.out.println("  [!] Airport [" + code + "] already exists.");
             return false;
         }
+
+        // Keep the Airport object consistent with the key stored in the graph.
+        airport.setCode(code);
         airports.put(code, airport);
         adjList.put(code, new LinkedList<>());
         return true;
     }
 
-    /** Remove airport (vertex) and all associated edges. O(V + E) */
+    /** Remove airport (vertex) and all incoming/outgoing edges. O(V + E). */
     public boolean removeAirport(String code) {
-        code = code.toUpperCase();
+        code = normalizeCode(code);
         if (!airports.containsKey(code)) {
             System.out.println("  [!] Airport [" + code + "] not found.");
             return false;
         }
+
+        // Removing this adjacency-list entry removes every outgoing route.
         adjList.remove(code);
         airports.remove(code);
-        final String c = code;
-        for (LinkedList<Flight> fl : adjList.values())
-            fl.removeIf(f -> f.getDestination().getCode().equals(c));
+
+        // Remove every incoming route from the remaining vertices.
+        final String removedCode = code;
+        for (LinkedList<Flight> flights : adjList.values()) {
+            flights.removeIf(f -> normalizeCode(f.getDestination().getCode()).equals(removedCode));
+        }
+
         System.out.println("  [OK] Airport [" + code + "] and all its routes removed.");
         return true;
     }
@@ -51,10 +73,17 @@ public class FlightGraph {
     //  EDGE OPERATIONS
     // ============================================================
 
-    /** Add flight route (directed edge). O(1) */
+    /** Add a directed, weighted flight edge. O(E) because duplicate checks scan routes. */
     public boolean addFlight(Flight flight) {
-        String src  = flight.getSource().getCode().toUpperCase();
-        String dest = flight.getDestination().getCode().toUpperCase();
+        if (flight == null || flight.getSource() == null || flight.getDestination() == null) {
+            System.out.println("  [!] Flight, source and destination are required.");
+            return false;
+        }
+
+        String src  = normalizeCode(flight.getSource().getCode());
+        String dest = normalizeCode(flight.getDestination().getCode());
+        String flightCode = normalizeFlightCode(flight.getFlightCode());
+
         if (!airports.containsKey(src)) {
             System.out.println("  [!] Source [" + src + "] not found.");
             return false;
@@ -63,28 +92,62 @@ public class FlightGraph {
             System.out.println("  [!] Destination [" + dest + "] not found.");
             return false;
         }
+        if (src.equals(dest)) {
+            System.out.println("  [!] Source and destination must be different airports.");
+            return false;
+        }
+        if (flightCode.isEmpty()) {
+            System.out.println("  [!] Flight code is required.");
+            return false;
+        }
+        if (!isPositiveFinite(flight.getDistance()) ||
+            !isPositiveFinite(flight.getDuration()) ||
+            !isPositiveFinite(flight.getPrice())) {
+            System.out.println("  [!] Distance, duration and price must be positive finite values.");
+            return false;
+        }
+        if (searchFlightByCode(flightCode) != null) {
+            System.out.println("  [!] Flight code [" + flightCode + "] already exists.");
+            return false;
+        }
+        if (getDirectFlight(src, dest) != null) {
+            System.out.println("  [!] Direct route [" + src + " -> " + dest + "] already exists.");
+            return false;
+        }
+
+        // Canonicalize references so every edge points to vertices owned by this graph.
+        flight.setFlightCode(flightCode);
+        flight.setSource(airports.get(src));
+        flight.setDestination(airports.get(dest));
         adjList.get(src).add(flight);
         return true;
     }
 
-    /** Remove a specific flight route (directed edge). O(E) */
+    /** Remove a specific directed flight edge. O(out-degree). */
     public boolean removeFlight(String srcCode, String destCode) {
-        srcCode  = srcCode.toUpperCase();
-        destCode = destCode.toUpperCase();
+        srcCode  = normalizeCode(srcCode);
+        destCode = normalizeCode(destCode);
+
         if (!airports.containsKey(srcCode)) {
             System.out.println("  [!] Source [" + srcCode + "] not found.");
             return false;
         }
+        if (!airports.containsKey(destCode)) {
+            System.out.println("  [!] Destination [" + destCode + "] not found.");
+            return false;
+        }
+
         Iterator<Flight> it = adjList.get(srcCode).iterator();
         while (it.hasNext()) {
             Flight f = it.next();
-            if (f.getDestination().getCode().equals(destCode)) {
+            if (normalizeCode(f.getDestination().getCode()).equals(destCode)) {
                 it.remove();
                 System.out.println("  [OK] Flight [" + srcCode + "] -> ["
                         + destCode + "] removed.");
                 return true;
             }
         }
+
         System.out.println("  [!] No direct flight from [" + srcCode
                 + "] to [" + destCode + "].");
         return false;
@@ -167,7 +230,7 @@ public class FlightGraph {
 
     /** Display all direct destinations from one airport. */
     public void displayNeighbors(String code) {
-        code = code.toUpperCase();
+        code = normalizeCode(code);
         if (!airports.containsKey(code)) {
             System.out.println("  [!] Airport [" + code + "] not found.");
             return;
@@ -241,36 +304,75 @@ public class FlightGraph {
 
     /** Returns Flight if a direct route exists, null otherwise. */
     public Flight getDirectFlight(String srcCode, String destCode) {
-        srcCode  = srcCode.toUpperCase();
-        destCode = destCode.toUpperCase();
-        if (!airports.containsKey(srcCode)) return null;
-        for (Flight f : adjList.get(srcCode))
-            if (f.getDestination().getCode().equals(destCode)) return f;
+        srcCode  = normalizeCode(srcCode);
+        destCode = normalizeCode(destCode);
+        if (!airports.containsKey(srcCode) || !airports.containsKey(destCode)) return null;
+
+        for (Flight f : adjList.get(srcCode)) {
+            if (normalizeCode(f.getDestination().getCode()).equals(destCode)) return f;
+        }
         return null;
     }
 
-    /** Find a flight by its flight code (e.g. MH2618). */
+    /** Find a flight by its unique flight code (e.g. MH2618). */
     public Flight searchFlightByCode(String flightCode) {
-        for (LinkedList<Flight> flights : adjList.values())
-            for (Flight f : flights)
-                if (f.getFlightCode().equalsIgnoreCase(flightCode)) return f;
+        String target = normalizeFlightCode(flightCode);
+        if (target.isEmpty()) return null;
+
+        for (LinkedList<Flight> flights : adjList.values()) {
+            for (Flight f : flights) {
+                if (normalizeFlightCode(f.getFlightCode()).equals(target)) return f;
+            }
+        }
         return null;
     }
 
     // ============================================================
     //  HELPER / UTILITY
     // ============================================================
-    public int     totalAirports() { return airports.size(); }
-    public int     totalFlights()  {
-        int c = 0;
-        for (LinkedList<Flight> fl : adjList.values()) c += fl.size();
-        return c;
+    public int totalAirports() { return airports.size(); }
+
+    public int totalFlights() {
+        int count = 0;
+        for (LinkedList<Flight> flights : adjList.values()) count += flights.size();
+        return count;
     }
-    public boolean        airportExists(String code)    { return airports.containsKey(code.toUpperCase()); }
-    public Airport        getAirport(String code)       { return airports.get(code.toUpperCase()); }
-    public List<Flight>   getNeighbors(String code)     { return adjList.getOrDefault(code.toUpperCase(), new LinkedList<>()); }
-    public Map<String, Airport>            getAirports() { return airports; }
-    public Map<String, LinkedList<Flight>> getAdjList()  { return adjList; }
+
+    public boolean airportExists(String code) {
+        return airports.containsKey(normalizeCode(code));
+    }
+
+    public Airport getAirport(String code) {
+        return airports.get(normalizeCode(code));
+    }
+
+    public List<Flight> getNeighbors(String code) {
+        LinkedList<Flight> flights = adjList.get(normalizeCode(code));
+        return flights == null ? Collections.emptyList() : flights;
+    }
+
+    public Map<String, Airport> getAirports() { return airports; }
+    public Map<String, LinkedList<Flight>> getAdjList() { return adjList; }
+
+    private static String normalizeCode(String code) {
+        return code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeFlightCode(String code) {
+        return code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static boolean isValidAirportCode(String code) {
+        return code.matches("[A-Z]{3}");
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private static boolean isPositiveFinite(double value) {
+        return Double.isFinite(value) && value > 0;
+    }
 
     // ============================================================
     //  FORMATTING
